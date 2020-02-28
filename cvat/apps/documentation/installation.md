@@ -58,7 +58,7 @@ server. Proxy is an advanced topic and it is not covered by the guide.
 
     ```bash
     sudo apt-get install -y python3-pip
-    sudo pip3 install docker-compose
+    sudo python3 -m pip install docker-compose
     ```
 
 -   Clone _CVAT_ source code from the
@@ -100,7 +100,7 @@ server. Proxy is an advanced topic and it is not covered by the guide.
     install it as well. Type commands below in a terminal window:
 
     ```sh
-    wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+    curl https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
     sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
     sudo apt-get update
     sudo apt-get install -y google-chrome-stable
@@ -240,6 +240,7 @@ server. Proxy is an advanced topic and it is not covered by the guide.
 - [TF Object Detection API: auto annotation](/components/tf_annotation/README.md)
 - [Support for NVIDIA GPUs](/components/cuda/README.md)
 - [Semi-automatic segmentation with Deep Extreme Cut](/cvat/apps/dextr_segmentation/README.md)
+- [Auto segmentation: Keras+Tensorflow Mask R-CNN Segmentation](/components/auto_segmentation/README.md)
 
 ```bash
 # Build and run containers with CUDA and OpenVINO support

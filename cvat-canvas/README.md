@@ -40,6 +40,7 @@ Canvas itself handles:
     interface DrawData {
         enabled: boolean;
         shapeType?: string;
+        rectDrawingMethod?: string;
         numberOfPoints?: number;
         initialState?: any;
         crosshair?: boolean;
@@ -70,6 +71,7 @@ Canvas itself handles:
 
     interface Canvas {
         html(): HTMLDivElement;
+        setZLayer(zLayer: number | null): void;
         setup(frameData: any, objectStates: any[]): void;
         activate(clientID: number, attributeID?: number): void;
         rotate(rotation: Rotation, remember?: boolean): void;
@@ -82,6 +84,10 @@ Canvas itself handles:
         split(splitData: SplitData): void;
         merge(mergeData: MergeData): void;
         select(objectState: any): void;
+
+        fitCanvas(): void;
+        dragCanvas(enable: boolean): void;
+        zoomCanvas(enable: boolean): void;
 
         cancel(): void;
     }
@@ -99,7 +105,7 @@ Canvas itself handles:
 - Drawn texts have the class ```cvat_canvas_text```
 - Tags have the class ```cvat_canvas_tag```
 - Canvas image has ID ```cvat_canvas_image```
-- Grid on the canvas has ID ```cvat_canvas_grid_pattern```
+- Grid on the canvas has ID ```cvat_canvas_grid``` and ```cvat_canvas_grid_pattern```
 - Crosshair during a draw has class ```cvat_canvas_crosshair```
 
 ### Events
@@ -107,16 +113,21 @@ Canvas itself handles:
 Standard JS events are used.
 ```js
     - canvas.setup
-    - canvas.activated => ObjectState
-    - canvas.deactivated
+    - canvas.activated => {state: ObjectState}
+    - canvas.clicked => {state: ObjectState}
     - canvas.moved => {states: ObjectState[], x: number, y: number}
     - canvas.find => {states: ObjectState[], x: number, y: number}
     - canvas.drawn => {state: DrawnData}
+    - canvas.editstart
     - canvas.edited => {state: ObjectState, points: number[]}
     - canvas.splitted => {state: ObjectState}
     - canvas.groupped => {states: ObjectState[]}
     - canvas.merged => {states: ObjectState[]}
     - canvas.canceled
+    - canvas.dragstart
+    - canvas.dragstop
+    - canvas.zoomstart
+    - canvas.zoomstop
 ```
 
 ### WEB
@@ -124,8 +135,11 @@ Standard JS events are used.
     // Create an instance of a canvas
     const canvas = new window.canvas.Canvas();
 
+    console.log('Version', window.canvas.CanvasVersion);
+
     // Put canvas to a html container
     htmlContainer.appendChild(canvas.html());
+    canvas.fitCanvas();
 
     // Next you can use its API methods. For example:
     canvas.rotate(window.Canvas.Rotation.CLOCKWISE90);
@@ -136,63 +150,23 @@ Standard JS events are used.
     });
 ```
 
-### TypeScript
-- Add to ```tsconfig.json```:
-```json
-    "compilerOptions": {
-        "paths": {
-            "cvat-canvas.node": ["3rdparty/cvat-canvas.node"]
-        }
-    }
-```
-
-- ```3rdparty``` directory contains both ```cvat-canvas.node.js``` and ```cvat-canvas.node.d.ts```.
-- Add alias to ```webpack.config.js```:
-```js
-module.exports = {
-    resolve: {
-        alias: {
-            'cvat-canvas.node': path.resolve(__dirname, '3rdparty/cvat-canvas.node.js'),
-        }
-    }
-}
-```
-
-Than you can use it in TypeScript:
-```ts
-    import * as CANVAS from 'cvat-canvas.node';
-    // Create an instance of a canvas
-    const canvas = new CANVAS.Canvas();
-
-    // Put canvas to a html container
-    htmlContainer.appendChild(canvas.html());
-
-    // Next you can use its API methods. For example:
-    canvas.rotate(CANVAS.Rotation.CLOCKWISE90);
-    canvas.draw({
-        enabled: true,
-        shapeType: 'rectangle',
-        crosshair: true,
-    });
-```
-
-## States
-
- ![](images/states.svg)
-
 ## API Reaction
 
-|            | IDLE | GROUPING | SPLITTING | DRAWING | MERGING | EDITING |
-|------------|------|----------|-----------|---------|---------|---------|
-| html()     | +    | +        | +         | +       | +       | +       |
-| setup()    | +    | +        | +         | +       | +       | -       |
-| activate() | +    | -        | -         | -       | -       | -       |
-| rotate()   | +    | +        | +         | +       | +       | +       |
-| focus()    | +    | +        | +         | +       | +       | +       |
-| fit()      | +    | +        | +         | +       | +       | +       |
-| grid()     | +    | +        | +         | +       | +       | +       |
-| draw()     | +    | -        | -         | -       | -       | -       |
-| split()    | +    | -        | +         | -       | -       | -       |
-| group      | +    | +        | -         | -       | -       | -       |
-| merge()    | +    | -        | -         | -       | +       | -       |
-| cancel()   | -    | +        | +         | +       | +       | +       |
+|              | IDLE | GROUPING | SPLITTING | DRAWING | MERGING | EDITING | DRAG | ZOOM |
+|--------------|------|----------|-----------|---------|---------|---------|------|------|
+| html()       | +    | +        | +         | +       | +       | +       | +    | +    |
+| setup()      | +    | +        | +         | +       | +       | -       | +    | +    |
+| activate()   | +    | -        | -         | -       | -       | -       | -    | -    |
+| rotate()     | +    | +        | +         | +       | +       | +       | +    | +    |
+| focus()      | +    | +        | +         | +       | +       | +       | +    | +    |
+| fit()        | +    | +        | +         | +       | +       | +       | +    | +    |
+| grid()       | +    | +        | +         | +       | +       | +       | +    | +    |
+| draw()       | +    | -        | -         | -       | -       | -       | -    | -    |
+| split()      | +    | -        | +         | -       | -       | -       | -    | -    |
+| group()      | +    | +        | -         | -       | -       | -       | -    | -    |
+| merge()      | +    | -        | -         | -       | +       | -       | -    | -    |
+| fitCanvas()  | +    | +        | +         | +       | +       | +       | +    | +    |
+| dragCanvas() | +    | -        | -         | -       | -       | -       | +    | -    |
+| zoomCanvas() | +    | -        | -         | -       | -       | -       | -    | +    |
+| cancel()     | -    | +        | +         | +       | +       | +       | +    | +    |
+| setZLayer()  | +    | +        | +         | +       | +       | +       | +    | +    |

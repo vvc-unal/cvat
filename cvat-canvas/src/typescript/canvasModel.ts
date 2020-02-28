@@ -1,10 +1,6 @@
-/*
-* Copyright (C) 2019 Intel Corporation
-* SPDX-License-Identifier: MIT
-*/
-
-// Disable till full implementation
-/* eslint class-methods-use-this: "off" */
+// Copyright (C) 2019-2020 Intel Corporation
+//
+// SPDX-License-Identifier: MIT
 
 import { MasterImpl } from './master';
 
@@ -36,13 +32,14 @@ export interface FocusData {
 }
 
 export interface ActiveElement {
-    clientID: number;
-    attributeID: number;
+    clientID: number | null;
+    attributeID: number | null;
 }
 
 export interface DrawData {
     enabled: boolean;
     shapeType?: string;
+    rectDrawingMethod?: string;
     numberOfPoints?: number;
     initialState?: any;
     crosshair?: boolean;
@@ -77,20 +74,27 @@ export enum Rotation {
 }
 
 export enum UpdateReasons {
-    IMAGE = 'image',
-    OBJECTS = 'objects',
-    ZOOM = 'zoom',
-    FIT = 'fit',
-    MOVE = 'move',
-    GRID = 'grid',
-    FOCUS = 'focus',
-    ACTIVATE = 'activate',
+    IMAGE_CHANGED = 'image_changed',
+    IMAGE_ZOOMED = 'image_zoomed',
+    IMAGE_FITTED = 'image_fitted',
+    IMAGE_MOVED = 'image_moved',
+    GRID_UPDATED = 'grid_updated',
+    SET_Z_LAYER = 'set_z_layer',
+
+    OBJECTS_UPDATED = 'objects_updated',
+    SHAPE_ACTIVATED = 'shape_activated',
+    SHAPE_FOCUSED = 'shape_focused',
+
+    FITTED_CANVAS = 'fitted_canvas',
+
     DRAW = 'draw',
     MERGE = 'merge',
     SPLIT = 'split',
     GROUP = 'group',
     SELECT = 'select',
     CANCEL = 'cancel',
+    DRAG_CANVAS = 'drag_canvas',
+    ZOOM_CANVAS = 'ZOOM_CANVAS',
 }
 
 export enum Mode {
@@ -102,11 +106,14 @@ export enum Mode {
     MERGE = 'merge',
     SPLIT = 'split',
     GROUP = 'group',
+    DRAG_CANVAS = 'drag_canvas',
+    ZOOM_CANVAS = 'zoom_canvas',
 }
 
 export interface CanvasModel {
-    readonly image: string;
+    readonly image: HTMLImageElement | null;
     readonly objects: any[];
+    readonly zLayer: number | null;
     readonly gridSize: Size;
     readonly focusData: FocusData;
     readonly activeElement: ActiveElement;
@@ -118,11 +125,12 @@ export interface CanvasModel {
     geometry: Geometry;
     mode: Mode;
 
+    setZLayer(zLayer: number | null): void;
     zoom(x: number, y: number, direction: number): void;
     move(topOffset: number, leftOffset: number): void;
 
     setup(frameData: any, objectStates: any[]): void;
-    activate(clientID: number, attributeID: number): void;
+    activate(clientID: number | null, attributeID: number | null): void;
     rotate(rotation: Rotation, remember: boolean): void;
     focus(clientID: number, padding: number): void;
     fit(): void;
@@ -134,6 +142,10 @@ export interface CanvasModel {
     merge(mergeData: MergeData): void;
     select(objectState: any): void;
 
+    fitCanvas(width: number, height: number): void;
+    dragCanvas(enable: boolean): void;
+    zoomCanvas(enable: boolean): void;
+
     cancel(): void;
 }
 
@@ -142,7 +154,8 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
         activeElement: ActiveElement;
         angle: number;
         canvasSize: Size;
-        image: string;
+        image: HTMLImageElement | null;
+        imageID: number | null;
         imageOffset: number;
         imageSize: Size;
         focusData: FocusData;
@@ -152,6 +165,7 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
         rememberAngle: boolean;
         scale: number;
         top: number;
+        zLayer: number | null;
         drawData: DrawData;
         mergeData: MergeData;
         groupData: GroupData;
@@ -173,7 +187,8 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
                 height: 0,
                 width: 0,
             },
-            image: '',
+            image: null,
+            imageID: null,
             imageOffset: 0,
             imageSize: {
                 height: 0,
@@ -192,10 +207,9 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
             rememberAngle: false,
             scale: 1,
             top: 0,
+            zLayer: null,
             drawData: {
                 enabled: false,
-                shapeType: null,
-                numberOfPoints: null,
                 initialState: null,
             },
             mergeData: {
@@ -208,8 +222,13 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
                 enabled: false,
             },
             selected: null,
-            mode: null,
+            mode: Mode.IDLE,
         };
+    }
+
+    public setZLayer(zLayer: number | null): void {
+        this.data.zLayer = zLayer;
+        this.notify(UpdateReasons.SET_Z_LAYER);
     }
 
     public zoom(x: number, y: number, direction: number): void {
@@ -233,42 +252,93 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
                 * (oldScale / this.data.scale - 1)) * this.data.scale;
         }
 
-        this.notify(UpdateReasons.ZOOM);
+        this.notify(UpdateReasons.IMAGE_ZOOMED);
     }
 
     public move(topOffset: number, leftOffset: number): void {
         this.data.top += topOffset;
         this.data.left += leftOffset;
-        this.notify(UpdateReasons.MOVE);
+        this.notify(UpdateReasons.IMAGE_MOVED);
+    }
+
+    public fitCanvas(width: number, height: number): void {
+        this.data.canvasSize.height = height;
+        this.data.canvasSize.width = width;
+
+        this.data.imageOffset = Math.floor(Math.max(
+            this.data.canvasSize.height / FrameZoom.MIN,
+            this.data.canvasSize.width / FrameZoom.MIN,
+        ));
+
+        this.notify(UpdateReasons.FITTED_CANVAS);
+        this.notify(UpdateReasons.OBJECTS_UPDATED);
+    }
+
+    public dragCanvas(enable: boolean): void {
+        if (enable && this.data.mode !== Mode.IDLE) {
+            throw Error(`Canvas is busy. Action: ${this.data.mode}`);
+        }
+
+        if (!enable && this.data.mode !== Mode.DRAG_CANVAS) {
+            throw Error(`Canvas is not in the drag mode. Action: ${this.data.mode}`);
+        }
+
+        this.data.mode = enable ? Mode.DRAG_CANVAS : Mode.IDLE;
+        this.notify(UpdateReasons.DRAG_CANVAS);
+    }
+
+    public zoomCanvas(enable: boolean): void {
+        if (enable && this.data.mode !== Mode.IDLE) {
+            throw Error(`Canvas is busy. Action: ${this.data.mode}`);
+        }
+
+        if (!enable && this.data.mode !== Mode.ZOOM_CANVAS) {
+            throw Error(`Canvas is not in the zoom mode. Action: ${this.data.mode}`);
+        }
+
+        this.data.mode = enable ? Mode.ZOOM_CANVAS : Mode.IDLE;
+        this.notify(UpdateReasons.ZOOM_CANVAS);
     }
 
     public setup(frameData: any, objectStates: any[]): void {
+        if (frameData.number === this.data.imageID) {
+            this.data.objects = objectStates;
+            this.notify(UpdateReasons.OBJECTS_UPDATED);
+            return;
+        }
+
+        this.data.imageID = frameData.number;
         frameData.data(
             (): void => {
-                this.data.image = '';
-                this.notify(UpdateReasons.IMAGE);
+                this.data.image = null;
+                this.notify(UpdateReasons.IMAGE_CHANGED);
             },
-        ).then((data: string): void => {
-            this.data.imageSize = {
-                height: (frameData.height as number),
-                width: (frameData.width as number),
-            };
+        ).then((data: HTMLImageElement): void => {
+            if (frameData.number !== this.data.imageID) {
+                // already another image
+                return;
+            }
 
             if (!this.data.rememberAngle) {
                 this.data.angle = 0;
             }
 
+            this.data.imageSize = {
+                height: (frameData.height as number),
+                width: (frameData.width as number),
+            };
+
             this.data.image = data;
-            this.notify(UpdateReasons.IMAGE);
+            this.notify(UpdateReasons.IMAGE_CHANGED);
             this.data.objects = objectStates;
-            this.notify(UpdateReasons.OBJECTS);
+            this.notify(UpdateReasons.OBJECTS_UPDATED);
         }).catch((exception: any): void => {
             throw exception;
         });
     }
 
-    public activate(clientID: number, attributeID: number): void {
-        if (this.data.mode !== Mode.IDLE) {
+    public activate(clientID: number | null, attributeID: number | null): void {
+        if (this.data.mode !== Mode.IDLE && clientID !== null) {
             // Exception or just return?
             throw Error(`Canvas is busy. Action: ${this.data.mode}`);
         }
@@ -278,7 +348,7 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
             attributeID,
         };
 
-        this.notify(UpdateReasons.ACTIVATE);
+        this.notify(UpdateReasons.SHAPE_ACTIVATED);
     }
 
     public rotate(rotation: Rotation, remember: boolean = false): void {
@@ -299,7 +369,7 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
             padding,
         };
 
-        this.notify(UpdateReasons.FOCUS);
+        this.notify(UpdateReasons.SHAPE_FOCUSED);
     }
 
     public fit(): void {
@@ -326,7 +396,7 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
         this.data.top = (this.data.canvasSize.height / 2 - this.data.imageSize.height / 2);
         this.data.left = (this.data.canvasSize.width / 2 - this.data.imageSize.width / 2);
 
-        this.notify(UpdateReasons.FIT);
+        this.notify(UpdateReasons.IMAGE_FITTED);
     }
 
     public grid(stepX: number, stepY: number): void {
@@ -335,7 +405,7 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
             width: stepX,
         };
 
-        this.notify(UpdateReasons.GRID);
+        this.notify(UpdateReasons.GRID_UPDATED);
     }
 
     public draw(drawData: DrawData): void {
@@ -454,11 +524,20 @@ export class CanvasModelImpl extends MasterImpl implements CanvasModel {
         ));
     }
 
-    public get image(): string {
+    public get zLayer(): number | null {
+        return this.data.zLayer;
+    }
+
+    public get image(): HTMLImageElement | null {
         return this.data.image;
     }
 
     public get objects(): any[] {
+        if (this.data.zLayer !== null) {
+            return this.data.objects
+                .filter((object: any): boolean => object.zOrder <= this.data.zLayer);
+        }
+
         return this.data.objects;
     }
 

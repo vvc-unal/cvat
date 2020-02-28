@@ -19,12 +19,9 @@
         /**
             * @param {Object} serialized - is an dictionary which contains
             * initial information about an ObjectState;
-            * Necessary fields: objectType, shapeType
-            * (don't have setters)
-            * Necessary fields for objects which haven't been added to collection yet: frame
-            * (doesn't have setters)
-            * Optional fields: points, group, zOrder, outside, occluded,
-            * attributes, lock, label, mode, color, keyframe, clientID, serverID
+            * Necessary fields: objectType, shapeType, frame, updated
+            * Optional fields: points, group, zOrder, outside, occluded, hidden,
+            * attributes, lock, label, mode, color, keyframe, keyframes, clientID, serverID
             * These fields can be set later via setters
         */
         constructor(serialized) {
@@ -37,11 +34,13 @@
                 occluded: null,
                 keyframe: null,
 
-                group: null,
-                zOrder: null,
+                zOrder: undefined,
                 lock: null,
                 color: null,
-                visibility: null,
+                hidden: null,
+                group: serialized.group,
+                keyframes: serialized.keyframes,
+                updated: serialized.updated,
 
                 clientID: serialized.clientID,
                 serverID: serialized.serverID,
@@ -63,11 +62,12 @@
                     this.occluded = false;
                     this.keyframe = false;
 
-                    this.group = false;
                     this.zOrder = false;
                     this.lock = false;
                     this.color = false;
-                    this.visibility = false;
+                    this.hidden = false;
+
+                    return reset;
                 },
                 writable: false,
             });
@@ -153,17 +153,17 @@
                         data.color = color;
                     },
                 },
-                visibility: {
+                hidden: {
                     /**
-                        * @name visibility
-                        * @type {module:API.cvat.enums.VisibleState}
+                        * @name hidden
+                        * @type {boolean}
                         * @memberof module:API.cvat.classes.ObjectState
                         * @instance
                     */
-                    get: () => data.visibility,
-                    set: (visibility) => {
-                        data.updateFlags.visibility = true;
-                        data.visibility = visibility;
+                    get: () => data.hidden,
+                    set: (hidden) => {
+                        data.updateFlags.hidden = true;
+                        data.hidden = hidden;
                     },
                 },
                 points: {
@@ -190,16 +190,14 @@
                 },
                 group: {
                     /**
+                        * Object with short group info { color, id }
                         * @name group
-                        * @type {integer}
+                        * @type {object}
                         * @memberof module:API.cvat.classes.ObjectState
                         * @instance
+                        * @readonly
                     */
                     get: () => data.group,
-                    set: (group) => {
-                        data.updateFlags.group = true;
-                        data.group = group;
-                    },
                 },
                 zOrder: {
                     /**
@@ -240,6 +238,22 @@
                         data.keyframe = keyframe;
                     },
                 },
+                keyframes: {
+                    /**
+                        * Object of keyframes { first, prev, next, last }
+                        * @name keyframes
+                        * @type {object}
+                        * @memberof module:API.cvat.classes.ObjectState
+                        * @readonly
+                        * @instance
+                    */
+                    get: () => {
+                        if (data.keyframes) {
+                            return { ...data.keyframes };
+                        }
+                        return null;
+                    },
+                },
                 occluded: {
                     /**
                         * @name occluded
@@ -265,6 +279,17 @@
                         data.updateFlags.lock = true;
                         data.lock = lock;
                     },
+                },
+                updated: {
+                    /**
+                        * Timestamp of the latest updated of the object
+                        * @name updated
+                        * @type {number}
+                        * @memberof module:API.cvat.classes.ObjectState
+                        * @instance
+                        * @readonly
+                    */
+                    get: () => data.updated,
                 },
                 attributes: {
                     /**
@@ -295,14 +320,13 @@
             }));
 
             this.label = serialized.label;
-            this.group = serialized.group;
             this.zOrder = serialized.zOrder;
             this.outside = serialized.outside;
             this.keyframe = serialized.keyframe;
             this.occluded = serialized.occluded;
             this.color = serialized.color;
             this.lock = serialized.lock;
-            this.visibility = serialized.visibility;
+            this.hidden = serialized.hidden;
 
             // It can be undefined in a constructor and it can be defined later
             if (typeof (serialized.points) !== 'undefined') {
@@ -348,42 +372,12 @@
                 .apiWrapper.call(this, ObjectState.prototype.delete, force);
             return result;
         }
-
-        /**
-            * Set the highest ZOrder within a frame
-            * @method up
-            * @memberof module:API.cvat.classes.ObjectState
-            * @readonly
-            * @instance
-            * @async
-            * @throws {module:API.cvat.exceptions.PluginError}
-        */
-        async up() {
-            const result = await PluginRegistry
-                .apiWrapper.call(this, ObjectState.prototype.up);
-            return result;
-        }
-
-        /**
-            * Set the lowest ZOrder within a frame
-            * @method down
-            * @memberof module:API.cvat.classes.ObjectState
-            * @readonly
-            * @instance
-            * @async
-            * @throws {module:API.cvat.exceptions.PluginError}
-        */
-        async down() {
-            const result = await PluginRegistry
-                .apiWrapper.call(this, ObjectState.prototype.down);
-            return result;
-        }
     }
 
     // Updates element in collection which contains it
     ObjectState.prototype.save.implementation = async function () {
-        if (this.hidden && this.hidden.save) {
-            return this.hidden.save();
+        if (this.__internal && this.__internal.save) {
+            return this.__internal.save();
         }
 
         return this;
@@ -391,29 +385,12 @@
 
     // Delete element from a collection which contains it
     ObjectState.prototype.delete.implementation = async function (force) {
-        if (this.hidden && this.hidden.delete) {
-            return this.hidden.delete(force);
+        if (this.__internal && this.__internal.delete) {
+            return this.__internal.delete(force);
         }
 
         return false;
     };
-
-    ObjectState.prototype.up.implementation = async function () {
-        if (this.hidden && this.hidden.up) {
-            return this.hidden.up();
-        }
-
-        return false;
-    };
-
-    ObjectState.prototype.down.implementation = async function () {
-        if (this.hidden && this.hidden.down) {
-            return this.hidden.down();
-        }
-
-        return false;
-    };
-
 
     module.exports = ObjectState;
 })();
