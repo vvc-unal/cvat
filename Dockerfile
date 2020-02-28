@@ -109,6 +109,9 @@ RUN pip3 install --no-cache-dir -r /tmp/requirements/${DJANGO_CONFIGURATION}.txt
 # pycocotools package is impossible to install with its dependencies by one pip install command
 RUN pip3 install --no-cache-dir pycocotools==2.0.0
 
+pip3 uninstall gitdb
+pip3 install gitdb==0.6.4
+
 # Install git application dependencies
 RUN apt-get update && \
     apt-get install -y ssh netcat-openbsd git curl zip  && \
