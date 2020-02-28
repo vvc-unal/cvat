@@ -91,5 +91,5 @@ volumes:
   cvat_share:
     driver_opts:
       type: none
-      device: "/media/Store/juan/Data sets/VVC_Videos"
+      device: "/home/juan/Descargas/VVC/VVC_Videos"
       o: bind

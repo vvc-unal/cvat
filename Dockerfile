@@ -99,9 +99,6 @@ RUN python3 -m pip install --no-cache-dir -r /tmp/requirements/${DJANGO_CONFIGUR
 # pycocotools package is impossible to install with its dependencies by one pip install command
 RUN python3 -m pip install --no-cache-dir pycocotools==2.0.0
 
-python3 -m pip uninstall gitdb
-python3 -m pip install gitdb==0.6.4
-
 # CUDA support
 ARG CUDA_SUPPORT
 ENV CUDA_SUPPORT=${CUDA_SUPPORT}
@@ -127,6 +124,10 @@ COPY tests ${HOME}/tests
 COPY datumaro/ ${HOME}/datumaro
 
 RUN python3 -m pip install --no-cache-dir -r ${HOME}/datumaro/requirements.txt
+
+# Set version to resolve problem: ImportError: No module named 'gitdb.utils.compat'
+RUN python3 -m pip uninstall -y gitdb gitdb2
+RUN python3 -m pip install --no-cache-dir gitdb==0.6.4
 
 # Binary option is necessary to correctly apply the patch on Windows platform.
 # https://unix.stackexchange.com/questions/239364/how-to-fix-hunk-1-failed-at-1-different-line-endings-message
